@@ -3,7 +3,9 @@ import torch
 from torch import nn
 from Dataset import BIODataset
 from torchtext.vocab import Vocab
-from seqeval.metrics import f1_score
+from sklearn.metrics import f1_score as sk_f1
+import warnings
+warnings.filterwarnings('always')
 
 class Trainer():
     """Utility class to train and evaluate a model."""
@@ -36,7 +38,7 @@ class Trainer():
     
     
     def decode_output(self, x):
-        return [self.label_vocab.itos[idx] for idx in x]
+        return [self.label_vocab.itos[int(idx)] for idx in x]
 
     def train(self, train_dataset:BIODataset, 
               valid_dataset:BIODataset, 
@@ -104,7 +106,7 @@ class Trainer():
 
             if self.log_level > 0:
                 print('  [E: {:2d}] valid loss = {:0.4f}'.format(epoch, valid_loss))
-                print('  [E: {:2d}] valid loss = {:0.4f}'.format(epoch, valid_f1))
+                print('  [E: {:2d}] f1 score = {:0.4f}'.format(epoch, valid_f1))
 
         if self.log_level > 0:
             print('... Done!')
@@ -122,6 +124,7 @@ class Trainer():
             avg_valid_loss: the average validation loss over valid_dataset.
         """
         valid_loss = 0.0
+        valid_f1 = 0.0
         # set dropout to 0!! Needed when we are in inference mode.
         self.model.eval()
         with torch.no_grad():
@@ -130,10 +133,14 @@ class Trainer():
                 labels = sample['outputs']
 
                 predictions = self.model(inputs)
-                predictions = predictions.view(-1, predictions.shape[-1])
                 labels = labels.view(-1)
                 sample_loss = self.loss_function(predictions, labels) 
-                sample_f1 = f1_score(decode_output(predictions.tolist()), decode_output(labels.tolist()))  
+                preds = []
+                for p in predictions:
+                    preds.append(torch.argmax(p).item())
+                out=self.decode_output(preds)
+                lab=self.decode_output([x.item() for x in labels])
+                sample_f1 = sk_f1(out, lab, average="macro",  labels=self.label_vocab.itos, zero_division=0)  
                 valid_loss += sample_loss.tolist()
                 valid_f1 += sample_f1
         
