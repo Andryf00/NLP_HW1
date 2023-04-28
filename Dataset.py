@@ -20,17 +20,19 @@ class BIODataset(Dataset):
         self.input_file = input_file
         with open(input_file) as f:
             # read the entire file with reader.read() e parse it
-            self.data = [json.loads(line) for line in f]
+            self.data = [self.preprocess_words(json.loads(line)) for line in f]
         self.device = device
         self.encoded_data = None
     
-    def index_dataset(self, vocabulary, label_vocabulary):
+    def index_dataset(self, vocabulary, label_vocabulary):#, char_vocabulary):
         self.encoded_data = list()
         for i in range(len(self.data)):
             elem = self.data[i]
-            encoded_elem = torch.LongTensor(self.encode_text(elem["tokens"], vocabulary)).to(self.device)
+            #encoded_chars = [[char_vocabulary(i) for i in word] for word in elem["tokens"]]
+            encoded_words = torch.LongTensor(self.encode_text(elem["tokens"], vocabulary)).to(self.device)
             encoded_labels = torch.LongTensor([label_vocabulary[label] for label in elem["labels"]]).to(self.device)
-            self.encoded_data.append({"inputs":encoded_elem, 
+            self.encoded_data.append({"inputs":encoded_words,
+                                      #"chars":encoded_chars, 
                                       "outputs":encoded_labels})
 
     def preprocess_words(self, sentences):
@@ -40,8 +42,8 @@ class BIODataset(Dataset):
                           where each dictionary represents a word occurrence parsed from a CoNLL line)
         """
         for sentence in sentences:
-            for d in sentence:
-                d["form"] = d["form"].lower()
+            for w in sentence:
+                w = w.lower()
         return sentences
 
     def __len__(self):

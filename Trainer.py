@@ -3,7 +3,9 @@ import torch
 from torch import nn
 from Dataset import BIODataset
 from torchtext.vocab import Vocab
-from sklearn.metrics import f1_score as sk_f1
+from seqeval.metrics import f1_score
+from seqeval.scheme import IOB2 
+
 import warnings
 warnings.filterwarnings('always')
 
@@ -18,7 +20,7 @@ class Trainer():
         label_vocab: Vocab,
         log_steps:int=10_000,
         log_level:int=2,
-        patience=2):
+        patience=5):
         """
         Args:
             model: the model we want to train.
@@ -28,11 +30,9 @@ class Trainer():
         self.model = model
         self.loss_function = loss_function
         self.optimizer = optimizer
-
         self.label_vocab = label_vocab
         self.log_steps = log_steps
         self.log_level = log_level
-        self.label_vocab = label_vocab
         self.best_loss = 100
         self.patience = patience
     
@@ -60,7 +60,9 @@ class Trainer():
             print('Training ...')
         train_loss = 0.0
         epochs_no_improvement = 0
+        #hiddens = self.model.lstm.init_hiddens(batch_size=1)
         for epoch in range(epochs):
+         #   self.model.lstm.training = True
             if self.log_level > 0:
                 print(' Epoch {:03d}'.format(epoch + 1))
 
@@ -70,25 +72,27 @@ class Trainer():
             # for each batch 
             for step, sample in enumerate(train_dataset):
                 inputs = sample['inputs']
+                #chars = sample['chars']
                 labels = sample['outputs']
                 self.optimizer.zero_grad()
-
+                labels = labels.view(-1)
+                tag_scores, tag_seq = self.model(inputs)#, hiddens)#, chars)
+                sample_loss = -self.model.crf(tag_scores.unsqueeze(0), labels.unsqueeze(0), mask=None)
+                """
                 predictions = self.model(inputs)
                 predictions = predictions.view(-1, predictions.shape[-1])
-                labels = labels.view(-1)
-                # labels  [[1,2,3], [18, 12, 3]] after the view(-1) [1,2,3, 18, 12, 3]
-                
                 sample_loss = self.loss_function(predictions, labels)
+                """
                 sample_loss.backward()
                 self.optimizer.step()
-
                 epoch_loss += sample_loss.tolist()
                 if((step+1)%1000==0):
                     print(step, epoch_loss/step)
 
                 if self.log_level > 1 and step % self.log_steps == self.log_steps - 1:
                     print('\t[E: {:2d} @ step {}] current avg loss = {:0.4f}'.format(epoch, step, epoch_loss / (step + 1)))
-            
+
+                #self.evaluate(valid_dataset)
             avg_epoch_loss = epoch_loss / len(train_dataset)
             train_loss += avg_epoch_loss
             if self.log_level > 0:
@@ -99,7 +103,8 @@ class Trainer():
             #EARLY STOPPING
             if valid_loss<self.best_loss:
                 self.best_loss=valid_loss
-                torch.save(self.model.state_dict(), "best_relu")
+                torch.save(self.model.state_dict(), "best_"+str(valid_f1))
+                epochs_no_improvement=0
             else: epochs_no_improvement += 1
             if epochs_no_improvement>self.patience:
                 break
@@ -116,6 +121,7 @@ class Trainer():
     
 
     def evaluate(self, valid_dataset):
+        self.model.lstm.training = False
         """
         Args:
             valid_dataset: the dataset to use to evaluate the model.
@@ -125,39 +131,30 @@ class Trainer():
         """
         valid_loss = 0.0
         valid_f1 = 0.0
-        # set dropout to 0!! Needed when we are in inference mode.
         self.model.eval()
         with torch.no_grad():
+            outputs=[]
+            total_labels=[]
             for sample in valid_dataset:
                 inputs = sample['inputs']
                 labels = sample['outputs']
-
-                predictions = self.model(inputs)
                 labels = labels.view(-1)
+                #hiddens = self.model.lstm.init_hiddens(1)
+                tag_scores, tag_seq = self.model(inputs)#, hiddens)
+                sample_loss = -self.model.crf(tag_scores.unsqueeze(0), labels.unsqueeze(0), mask=None)
+                tag_seq = [x[0] for x in tag_seq]
+                """
+                predictions = self.model(inputs)
                 sample_loss = self.loss_function(predictions, labels) 
                 preds = []
                 for p in predictions:
                     preds.append(torch.argmax(p).item())
-                out=self.decode_output(preds)
-                lab=self.decode_output([x.item() for x in labels])
-                sample_f1 = sk_f1(out, lab, average="macro",  labels=self.label_vocab.itos, zero_division=0)  
+                outputs.append(self.decode_output(preds))
+                """
+                outputs.append(self.decode_output(tag_seq))
+                total_labels.append(self.decode_output([x.item() for x in labels]))
                 valid_loss += sample_loss.tolist()
-                valid_f1 += sample_f1
-        
-        return valid_loss / len(valid_dataset), valid_f1 / len(valid_dataset)
-
-
-    def predict(self, x):
-        """
-        Args:
-            x: a tensor of indices.
-        Returns: 
-            A list containing the predicted POS tag for each token in the
-            input sentences.
-        """
-        self.model.eval()
-        with torch.no_grad():
-            logits = self.model(x)
-            predictions = torch.argmax(logits, -1)
-            return logits, predictions
+            valid_f1 = f1_score(outputs, total_labels, average="macro", scheme=IOB2, mode='strict', zero_division=0)  
+            
+        return valid_loss / len(valid_dataset), valid_f1
     
