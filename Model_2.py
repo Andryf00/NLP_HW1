@@ -20,8 +20,8 @@ class Model_2(nn.Module):
         self.crf_linear = nn.Linear(lstm_output_dim, hparams.num_classes)
 
     
-    def forward(self, x, hiddens):
-        o, (h, c) = self.lstm(x, hiddens)
+    def forward(self, x, casing, pos, hiddens):
+        o, (h, c) = self.lstm(x, casing, pos, hiddens)
         tag_scores = nn.functional.log_softmax(o, dim=1)
         return tag_scores, self.crf.decode(tag_scores.unsqueeze(0), mask=None)
     

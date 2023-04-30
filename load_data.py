@@ -21,7 +21,7 @@ def build_vocab(dataset, min_freq=1):
     for i in range(len(dataset)):
         for token in dataset.get_raw_element(i)["tokens"]:
             if token is not None:
-                counter[token]+=1
+                counter[token.lower()]+=1
     return Vocab(counter)
 
 def build_label_vocab(dataset):
@@ -39,7 +39,7 @@ def build_char_vocab():
 train_dataset = BIODataset('./data/train.jsonl', device=device)
 dev_dataset = BIODataset('./data/dev.jsonl', device=device)
 test_dataset = BIODataset('./data/test.jsonl', device=device)
-vocabulary = build_vocab(train_dataset, min_freq=2)
+vocabulary = build_vocab(train_dataset, min_freq=1)
 label_vocabulary = build_label_vocab(train_dataset)
 char_vocabulary = build_char_vocab()
 
@@ -55,16 +55,22 @@ with open("embeddings.pkl", 'rb') as f:
 
 pretrained_embeddings = torch.randn(len(vocabulary), len(embedding['and']))
 initialised = 0
+unk = 0
 for i, w in enumerate(vocabulary.itos):
     if w in embedding.keys():
         initialised += 1
         vec = embedding[w]
         pretrained_embeddings[i] = torch.Tensor(vec)
-print("initialized words:",initialised)
+        pretrained_embeddings[i].requires_grad = False
+    else:
+        pretrained_embeddings[i].requires_grad = True
+        unk+=1
+        
+print("initialized words:",initialised, unk)
 
-train_dataset.index_dataset(vocabulary, label_vocabulary)#, char_vocabulary)
-dev_dataset.index_dataset(vocabulary, label_vocabulary)#, char_vocabulary)
-test_dataset.index_dataset(vocabulary, label_vocabulary)#, char_vocabulary)
+train_dataset.index_dataset(vocabulary, label_vocabulary)
+dev_dataset.index_dataset(vocabulary, label_vocabulary)
+test_dataset.index_dataset(vocabulary, label_vocabulary)
 
 class HParams():
     vocab_size = len(vocabulary)
@@ -75,12 +81,13 @@ class HParams():
     num_layers = 2
     dropout = 0.25
     embeddings = pretrained_embeddings
-net = Model(HParams).to(device)
-#net = Model_2(HParams).to(device)
+#net = Model(HParams).to(device)
+net = Model_2(HParams).to(device)
+net.load_state_dict(torch.load("best_0.7076488938133261"))
 
 
 def train():
-    trainer=Trainer(net, nn.CrossEntropyLoss(ignore_index=label_vocabulary['<pad>']), torch.optim.Adam(net.parameters(), lr=0.001), label_vocabulary)
+    trainer=Trainer(net, nn.CrossEntropyLoss(), torch.optim.Adam(net.parameters(), lr=0.001), label_vocabulary)
     trainer.train(train_dataset, dev_dataset, 25)
 
 train()

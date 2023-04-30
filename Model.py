@@ -2,6 +2,7 @@
 import torch
 from torch import nn
 from torchcrf import CRF
+import torch.nn.utils.rnn as rnn_utils
 
 
 class Model(nn.Module):
@@ -9,9 +10,8 @@ class Model(nn.Module):
         super(Model, self).__init__()   
         self.word_embedding = nn.Embedding(hparams.vocab_size, hparams.embedding_dim,
                                            _weight=hparams.embeddings)
-        self.word_embedding.weight.requires_grad = False
 
-        self.lstm = nn.LSTM(hparams.embedding_dim, hparams.hidden_dim, 
+        self.lstm = nn.LSTM(hparams.embedding_dim + 7 + 12, hparams.hidden_dim, 
                             bidirectional=hparams.bidirectional,
                             num_layers=hparams.num_layers, 
                             dropout = hparams.dropout if hparams.num_layers > 1 else 0)
@@ -24,10 +24,12 @@ class Model(nn.Module):
         
         self.crf = CRF(hparams.num_classes)
         self.crf_linear = nn.Linear(lstm_output_dim, hparams.num_classes)
-
+        
     
-    def forward(self, x):
+    def forward(self, x, casing, pos):
+
         embeddings = self.word_embedding(x)
+        embeddings = torch.cat((embeddings, casing, pos), dim=1)
         embeddings = self.dropout(embeddings)
         o, (h, c) = self.lstm(embeddings)
 

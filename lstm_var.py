@@ -126,7 +126,7 @@ class AWD_LSTM(nn.Module):
     """
 
     def __init__(self, hparams, bias=True, device='cuda',
-                 dropout_wts=0.0, dropout_emb=0.0, dropout_inp=0.25, dropout_hid=0.25):
+                 dropout_wts=0.2, dropout_emb=0.2, dropout_inp=0.2, dropout_hid=0.2):
         super(AWD_LSTM, self).__init__()
         
         self.dropout_emb = dropout_emb
@@ -141,7 +141,7 @@ class AWD_LSTM(nn.Module):
         #self.char_conv = nn.Conv2d(in_channels=1, out_channels=30, kernel_size=(3, 30))
         
 
-        self.layer0 = LSTMCell(hparams.embedding_dim, hparams.hidden_dim, bias=bias)
+        self.layer0 = LSTMCell(hparams.embedding_dim+7+12, hparams.hidden_dim, bias=bias)
         self.layer0 = WeightDropout(self.layer0, dropout_wts)
         self.layer1 = LSTMCell(hparams.hidden_dim, hparams.hidden_dim, bias=bias)
         self.layer1 = WeightDropout(self.layer1, dropout_wts)
@@ -184,7 +184,7 @@ class AWD_LSTM(nn.Module):
              weight.new_zeros(batch_size, self.hidden_size).to(self.device)]     # layer1
         return (h, c)
     
-    def embedding_dropout(self, embed, words, p=0.1):
+    def embedding_dropout(self, embed, words, casing, pos, p=0.2):
         """
         Taken from original authors code.
         TODO: re-write and add test
@@ -204,21 +204,12 @@ class AWD_LSTM(nn.Module):
         X = F.embedding(words, masked_embed_weight,
                         padding_idx, embed.max_norm, embed.norm_type,
                         embed.scale_grad_by_freq, embed.sparse)
+        
+        X = th.cat((X, casing, pos), dim=1)
         return X
 
-    def forward(self, x, hiddens):#, chars):
-        # Translate input tokens to embedding vectors
-        # with dropout
-        #print(x.size())
-        x = self.embedding_dropout(self.embedding, x, p=self.dropout_emb)
-        #x_char = self.char_embedding(chars)
-        #x_char = self.char_conv(x_char)
-        #x_char = nn.functional.max_pool2d(x_char, kernel_size=(x_char.size(2), 1))
-
-        #x = th.cat((x,x_char))#CHECK IF DIMENTIONS ARE FINE
-
-
-        
+    def forward(self, x, casing, pos, hiddens):
+        x = self.embedding_dropout(self.embedding, x, casing, pos, p=self.dropout_emb)
         x=x.unsqueeze(2)
         h, c = hiddens
         output = T().to(self.device)

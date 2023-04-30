@@ -33,7 +33,7 @@ class Trainer():
         self.label_vocab = label_vocab
         self.log_steps = log_steps
         self.log_level = log_level
-        self.best_loss = 100
+        self.best_f1 = 0.0
         self.patience = patience
     
     
@@ -60,9 +60,9 @@ class Trainer():
             print('Training ...')
         train_loss = 0.0
         epochs_no_improvement = 0
-        #hiddens = self.model.lstm.init_hiddens(batch_size=1)
+        hiddens = self.model.lstm.init_hiddens(batch_size=1)
         for epoch in range(epochs):
-         #   self.model.lstm.training = True
+            self.model.lstm.training = True
             if self.log_level > 0:
                 print(' Epoch {:03d}'.format(epoch + 1))
 
@@ -72,11 +72,12 @@ class Trainer():
             # for each batch 
             for step, sample in enumerate(train_dataset):
                 inputs = sample['inputs']
-                #chars = sample['chars']
+                casing = sample['casing']
                 labels = sample['outputs']
+                pos = sample['pos']
                 self.optimizer.zero_grad()
                 labels = labels.view(-1)
-                tag_scores, tag_seq = self.model(inputs)#, hiddens)#, chars)
+                tag_scores, tag_seq = self.model(inputs, casing, pos, hiddens)
                 sample_loss = -self.model.crf(tag_scores.unsqueeze(0), labels.unsqueeze(0), mask=None)
                 """
                 predictions = self.model(inputs)
@@ -100,18 +101,19 @@ class Trainer():
 
             valid_loss, valid_f1 = self.evaluate(valid_dataset)
 
+
+            if self.log_level > 0:
+                print('  [E: {:2d}] valid loss = {:0.4f}'.format(epoch, valid_loss))
+                print('  [E: {:2d}] f1 score = {:0.4f}'.format(epoch, valid_f1))
+
             #EARLY STOPPING
-            if valid_loss<self.best_loss:
-                self.best_loss=valid_loss
+            if valid_f1>self.best_f1:
+                self.best_f1=valid_f1
                 torch.save(self.model.state_dict(), "best_"+str(valid_f1))
                 epochs_no_improvement=0
             else: epochs_no_improvement += 1
             if epochs_no_improvement>self.patience:
                 break
-
-            if self.log_level > 0:
-                print('  [E: {:2d}] valid loss = {:0.4f}'.format(epoch, valid_loss))
-                print('  [E: {:2d}] f1 score = {:0.4f}'.format(epoch, valid_f1))
 
         if self.log_level > 0:
             print('... Done!')
@@ -130,17 +132,18 @@ class Trainer():
             avg_valid_loss: the average validation loss over valid_dataset.
         """
         valid_loss = 0.0
-        valid_f1 = 0.0
         self.model.eval()
         with torch.no_grad():
             outputs=[]
             total_labels=[]
             for sample in valid_dataset:
                 inputs = sample['inputs']
+                casing = sample['casing']
+                pos = sample['pos']
                 labels = sample['outputs']
                 labels = labels.view(-1)
-                #hiddens = self.model.lstm.init_hiddens(1)
-                tag_scores, tag_seq = self.model(inputs)#, hiddens)
+                hiddens = self.model.lstm.init_hiddens(1)
+                tag_scores, tag_seq = self.model(inputs, casing, pos, hiddens)
                 sample_loss = -self.model.crf(tag_scores.unsqueeze(0), labels.unsqueeze(0), mask=None)
                 tag_seq = [x[0] for x in tag_seq]
                 """
