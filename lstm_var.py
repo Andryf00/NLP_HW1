@@ -7,6 +7,11 @@ import warnings
 
 from pprint import pprint
 
+# Andrea:
+# This is an adaptation from https://github.com/a-martyn/awd-lstm/blob/master/model/net.py
+# I removed some parts that were not needed, and adapted the code to work with my framework
+# for example, the original implementation proposes a 3 layers LSTM, I made it 2 layers and bidirectional
+# The comments in the following code are not mine, aside from the one signed Andrea.
 
 class VariationalDropout():
     """ An adaption of torch.nn.functional.dropout that applies 
@@ -136,11 +141,7 @@ class AWD_LSTM(nn.Module):
         self.embedding = nn.Embedding(hparams.vocab_size, hparams.embedding_dim,
                                            _weight=hparams.embeddings)
         self.embedding.weight.requires_grad = False
-
-        #self.char_embedding = nn.Embedding(hparams.char_emb_dim , 30, _weight = th.rand(hparams.char_emb_dim, 30))
-        #self.char_conv = nn.Conv2d(in_channels=1, out_channels=30, kernel_size=(3, 30))
-        
-
+        #Andrea: embedding dim = 300 (komninos) + 7 (casing) + 12 (POS tag)  
         self.layer0 = LSTMCell(hparams.embedding_dim+7+12, hparams.hidden_dim, bias=bias)
         self.layer0 = WeightDropout(self.layer0, dropout_wts)
         self.layer1 = LSTMCell(hparams.hidden_dim, hparams.hidden_dim, bias=bias)
@@ -187,7 +188,6 @@ class AWD_LSTM(nn.Module):
     def embedding_dropout(self, embed, words, casing, pos, p=0.2):
         """
         Taken from original authors code.
-        TODO: re-write and add test
         """
         if not self.training:
             masked_embed_weight = embed.weight
@@ -216,7 +216,6 @@ class AWD_LSTM(nn.Module):
         output_nodrop = T().to(self.device)
         for t in range(x.size(0)):          
             # Propagate through layers for each timestep
-            # Note: using 3 layers here as per paper
             inp    = x[t,:,:]
             inp_d  = self.varidrop_inp.apply(inp, t, self.training, p=self.dropout_inp)
             
